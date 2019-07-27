@@ -17,59 +17,35 @@
 # The name of a config file provided with a complete path should not match
 # the name of any config file present in the /etc/openvpn directory.
 
-
-
 get_conf_val() {
   local val=$(grep -P "^$comment$2" "$1" | tail -n1 | cut -d' ' -f2)
   test -n "$val" && echo $val || echo $3
 }
 
-ip_tun_tap() {
-  grep "$2:" /proc/net/dev 1>/dev/null || return
-  ip tuntap $1 dev $2 mode $3 \
-    && test $1 = 'add' \
-    && ip link set $2 up promisc on
-}
-
-br_if() {
-  grep "$2:" /proc/net/dev 1>/dev/null && ! brctl show $2 | grep $3 1>/dev/null || return
-  brctl "${1}if" $2 $3
+ovpn_instance() {
+  local f=$(basename $1|rev|cut -d. -f2-|rev)
+  local cmd="/usr/sbin/openvpn --user nobody --group nobody --config $1 --daemon openvpn-$f --writepid /var/run/openvpn/$f.pid --verb 1"
+  echo "Starting OpenVPN:  $cmd"
+  if $cmd; then
+    local dev=$(get_conf_val "$1" 'dev')
+    local mode=${dev:0:3}
+    if [ "$mode" = 'tap' ]; then
+      local br=$(get_conf_val "$1" ';br')
+      test -n "$br" && grep "$br:" /proc/net/dev 1>/dev/null && ! brctl show $br | grep $dev 1>/dev/null || return
+      brctl "addif" $br $dev
+    fi
+  fi
 }
 
 ovpn_start() {
   if [ -x /usr/sbin/openvpn ]; then
     if [ -z "$1" ]; then # start OpenVPN for all config files:
       find /etc/openvpn -type f -name '*.openvpn' | while read config; do
-        #dev=$(get_conf_val "$config" 'dev')
-        #if [ -z "$dev" ]; then
-        #  echo "No dev directive in $config file. Skipped."
-        #  continue
-        #fi
-        #mode=${dev:0:3}
-        #ip_tun_tap 'add' "$dev" "$mode"
-        #if [ "$mode" = 'tap' ]; then
-        #  br=$(get_conf_val $config ';br')
-        #  if [ -n "$br" ]; then br_if 'add' $br $dev; fi
-        #fi
-        f=$(basename $config|rev|cut -d. -f2-|rev)
-        cmd="/usr/sbin/openvpn --user nobody --group nobody --config $config --daemon openvpn-$f --writepid /var/run/openvpn/$f.pid --verb 1"
-        echo "Starting OpenVPN:  $cmd"
-        if $cmd; then
-          dev=$(get_conf_val "$config" 'dev')
-          mode=${dev:0:3}
-          if [ "$mode" = 'tap' ]; then
-            br=$(get_conf_val $config ';br')
-            test -n "$br" && grep "$2:" /proc/net/dev 1>/dev/null && ! brctl show $2 | grep $3 1>/dev/null || continue
-            brctl "addif" $br $dev
-          fi
-        fi
+        ovpn_instance "$config"
       done
     else # start OpenVPN for one config file:
       if [ -r "$1" ]; then
-        f=$(basename $1|rev|cut -d. -f2-|rev)
-        cmd="/usr/sbin/openvpn --user nobody --group nobody --config $1 --daemon openvpn-$f --writepid /var/run/openvpn/$f.pid --verb 1"
-        echo "Starting OpenVPN:  $cmd"
-        $cmd
+        ovpn_instance "$1"
       else # config file is missing:
         echo "Error starting OpenVPN: config file $1 is missing."
       fi
