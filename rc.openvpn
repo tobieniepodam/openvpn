@@ -17,6 +17,7 @@
 # The name of a config file provided with a complete path should not match
 # the name of any config file present in the /etc/openvpn directory.
 
+
 get_conf_val() {
   local val=$(grep -P "^$comment$2" "$1" | tail -n1 | cut -d' ' -f2)
   test -n "$val" && echo $val || echo $3
@@ -24,11 +25,12 @@ get_conf_val() {
 
 ovpn_instance() {
   local f=$(basename $1|rev|cut -d. -f2-|rev)
-  local cmd="/usr/sbin/openvpn --user nobody --group nobody --config $1 --daemon openvpn-$f --writepid /var/run/openvpn/$f.pid --verb 1"
+  local cmd="/usr/sbin/openvpn --user nobody --group nobody --config $1 --daemon openvpn-$f --writepid /var/run/openvpn/$f.pid --verb 2"
   echo "Starting OpenVPN:  $cmd"
   if $cmd; then
     local dev=$(get_conf_val "$1" 'dev')
     local mode=${dev:0:3}
+    ip link set $dev up
     if [ "$mode" = 'tap' ]; then
       local br=$(get_conf_val "$1" ';br')
       test -n "$br" && grep "$br:" /proc/net/dev 1>/dev/null && ! brctl show $br | grep $dev 1>/dev/null || return
