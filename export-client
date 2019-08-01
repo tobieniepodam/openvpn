@@ -1,0 +1,98 @@
+#!/bin/bash
+
+PD='/etc/openvpn'
+
+
+get_conf_val() {
+  local val=$(grep -P "^$2" "$1" | tail -n1 | sed 's/\s\+/ /g' | cut -d' ' -f2)
+  test -n "$val" && echo $val || echo $3
+}
+
+get_conf_line() {
+  local val=$(grep -P "^$2" "$1" | tail -n1 | sed 's/\s\+/ /g' | cut -d' ' -f2)
+  test -n "$val" && echo $val || echo $3
+}
+
+extract_crt() {
+    test -f "$1" || exit 1
+    local start l
+    while read l; do
+        test -z "$start" -a "${l:0:10}" != '-----BEGIN' && continue
+        start=1
+        echo $l
+        test "${l:0:8}" = '-----END' && break
+    done < $1
+}
+
+error() {
+  echo
+  echo "$1" >&2
+  exit 1
+}
+
+
+read -e -p 'Put OpenVPN server config file: ' -i "$PD" conf
+test -f "$conf" || error "Config file '$conf' doesn't exist!"
+
+srv=$(dirname "$conf")
+pki="$srv/easyrsa/pki"
+test -d "$srv" -a -d "$pki" || error "Directory '$srv' or '$pki' doesn't exist!"
+
+clients=( $(find "$pki/issued" -type f -name '*@*' |xargs basename -a |rev|cut -d. -f2-|rev) )
+while test -z "$n" -o -z "${clients[$n]}"; do
+  echo
+  echo 'Select client: '
+  for i in ${!clients[*]}; do
+    echo $i ${clients[$i]}
+  done
+  read -p 'Your choice: ' n
+  n=$(echo $n | tr -dc '0-9\n')
+done
+client=${clients[$n]}
+test -f "$pki/issued/$client.crt" -a -f "$pki/private/$client.key" || error "File '$client.crt' or '$client.key' not found!" >&2
+echo
+
+read -p 'Windows client [y/*]? : ' -n1 win
+if [ "$win" == 'y' ]; then
+  o="$client.ovpn"
+else
+  o="$client.conf"
+fi
+
+echo 'client' > "$o"
+if [ -z "$win" ]; then
+echo ';autostart 0' >> $o
+echo 'user nobody' >> $o
+echo 'group nobody' >> $o
+echo 'persist-tun' >> $o
+echo 'persist-key' >> $o
+fi
+echo "remote IP $(get_conf_val "$conf" 'port' '1194')" >> $o
+echo 'nobind' >> $o
+echo "proto $(get_conf_val "$conf" 'proto')" >> $o
+echo "dev $(get_conf_val "$conf" 'dev' 'unknown')" >> $o
+echo ';lladdr' >> $o
+grep -P '^(tun-mtu|fragment|mssfix)' $conf  >> "$o"
+echo "cipher $(get_conf_val "$conf" 'cipher' 'unknown')" >> $o
+echo 'explicit-exit-notify 1' >> "$o"
+echo 'key-direction 1' >> "$o"
+echo 'verb 3' >> $o
+echo 'mute' >> $o
+
+echo -en "<cert>\n$(extract_crt $pki/issued/$client.crt)\n</cert>\n" >> "$o"
+echo -en "<key>\n$(extract_crt $pki/private/$client.key)\n</key>\n" >> "$o"
+
+for key in 'ca' 'tls-auth'; do
+  f=$(get_conf_val "$conf" "$key")
+  test -z "$f" && continue;
+  test ${f:0:1} = '/' || f="$srv/$f"
+
+  crt=$(extract_crt "$f")
+  if [ -n "$crt" ]; then
+    echo -en "<$key>\n$crt\n</$key>\n" >> "$o"
+  fi
+done
+
+if [ "$win" == 'y' ]; then
+  sed -i 's/$/\r/' "$o"
+fi
