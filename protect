@@ -6,9 +6,9 @@ PD=/etc/openvpn
 
 
 chown -R $USER:$GROUP $PD
-find $PD -type d -exec chmod 750 "{}" \;
-find $PD -type f -exec chmod 600 "{}" \;
-find $PD -type f -name 'easyrsa' -exec chmod 700 "{}" \;
-find $PD -type f -name 'crl.pem' -exec chmod 640 "{}" \;
-find $PD -type f -path '*ccd*' -exec chmod 640 "{}" \;
-find $PD -type f \( -name '*status.log' -o -name '*ipp.txt' \) -exec chmod 660 "{}" \;
+find "$PD" -type d -exec chmod 750 "{}" \;
+find "$PD" -type f -exec chmod 600 "{}" \;
+find "$PD" -type f \( -name 'easyrsa' -o -name 'if-up' -o -name 'if-down' \) -exec chmod 700 "{}" \;
+find "$PD" -type f -name 'crl.pem' -exec chmod 640 "{}" \;
+find "$PD" -type f -path '*ccd*' -exec chmod 640 "{}" \;
+find "$PD" -type f \( -name '*status.log' -o -name '*ipp.txt' \) -exec chmod 660 "{}" \;
