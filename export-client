@@ -61,7 +61,7 @@ fi
 
 echo 'client' > "$o"
 if [ -z "$win" ]; then
-echo ';autostart 0' >> $o
+echo ';rc-autostart 0' >> $o
 echo 'user nobody' >> $o
 echo 'group nobody' >> $o
 echo 'persist-tun' >> $o
@@ -77,7 +77,7 @@ echo "cipher $(get_conf_val "$conf" 'cipher' 'unknown')" >> $o
 echo 'explicit-exit-notify 1' >> "$o"
 echo 'key-direction 1' >> "$o"
 echo 'verb 3' >> $o
-echo 'mute' >> $o
+echo 'mute 20' >> $o
 
 echo -en "<cert>\n$(extract_crt $pki/issued/$client.crt)\n</cert>\n" >> "$o"
 echo -en "<key>\n$(extract_crt $pki/private/$client.key)\n</key>\n" >> "$o"

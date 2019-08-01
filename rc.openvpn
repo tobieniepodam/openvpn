@@ -24,29 +24,17 @@ get_conf_val() {
 }
 
 ovpn_instance() {
-  #local f=$(basename $1|rev|cut -d. -f2-|rev)
-  #local f=$(echo $1|cut -c14-|tr '/' '-'|rev|cut -d. -f2-|rev)
-  local f=$(echo "$1"|rev|cut -d/ -f-2|cut -d. -f2-|tr '/' '-'|rev)
-
-  local cmd="/usr/sbin/openvpn --user nobody --group nobody --config $1 --daemon openvpn-$f --writepid /var/run/openvpn/$f.pid --verb 2"
-  echo "Starting OpenVPN:  $cmd"
-  if $cmd; then
-    local dev=$(get_conf_val "$1" 'dev')
-    local mode=${dev:0:3}
-    ip link set $dev up
-    if [ "$mode" = 'tap' ]; then
-      local br=$(get_conf_val "$1" ';br')
-      test -n "$br" && grep "$br:" /proc/net/dev 1>/dev/null && ! brctl show $br | grep $dev 1>/dev/null || return
-      brctl "addif" $br $dev
-    fi
-  fi
+  local f=$(echo "$1"|cut -c14-|tr '/' '-'|rev|cut -d. -f2-|rev)
+  local cmd="/usr/sbin/openvpn --user nobody --group nobody --config '$1' --daemon 'openvpn($f)' --writepid '/var/run/openvpn/$f.pid' --verb 2"
+  echo "Starting OpenVPN: $cmd"
+  eval $cmd
 }
 
 ovpn_start() {
   if [ -x /usr/sbin/openvpn ]; then
     if [ -z "$1" ]; then # start OpenVPN for all config files:
       find /etc/openvpn -type f -name '*.conf' | while read config; do
-        grep -P '^[;#\s]+autostart\s+1' "$config" 1>/dev/null && ovpn_instance "$config"
+        grep -P '^[;#\s]+rc-autostart\s+1' "$config" 1>/dev/null && ovpn_instance "$config"
       done
     else # start OpenVPN for one config file:
       if [ -r "$1" ]; then
@@ -128,4 +116,3 @@ case "$1" in
 *)
   echo "Usage: $0 {start|stop|restart}"
 esac
-
