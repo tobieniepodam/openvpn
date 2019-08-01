@@ -19,12 +19,15 @@
 
 
 get_conf_val() {
-  local val=$(grep -P "^$comment$2" "$1" | tail -n1 | cut -d' ' -f2)
+  local val=$(grep -P "^$2" "$1" | tail -n1 | cut -d' ' -f2)
   test -n "$val" && echo $val || echo $3
 }
 
 ovpn_instance() {
-  local f=$(basename $1|rev|cut -d. -f2-|rev)
+  #local f=$(basename $1|rev|cut -d. -f2-|rev)
+  #local f=$(echo $1|cut -c14-|tr '/' '-'|rev|cut -d. -f2-|rev)
+  local f=$(echo "$1"|rev|cut -d/ -f-2|cut -d. -f2-|tr '/' '-'|rev)
+
   local cmd="/usr/sbin/openvpn --user nobody --group nobody --config $1 --daemon openvpn-$f --writepid /var/run/openvpn/$f.pid --verb 2"
   echo "Starting OpenVPN:  $cmd"
   if $cmd; then
@@ -42,8 +45,8 @@ ovpn_instance() {
 ovpn_start() {
   if [ -x /usr/sbin/openvpn ]; then
     if [ -z "$1" ]; then # start OpenVPN for all config files:
-      find /etc/openvpn -type f -name '*.openvpn' | while read config; do
-        ovpn_instance "$config"
+      find /etc/openvpn -type f -name '*.conf' | while read config; do
+        grep -P '^[;#\s]+autostart\s+1' "$config" 1>/dev/null && ovpn_instance "$config"
       done
     else # start OpenVPN for one config file:
       if [ -r "$1" ]; then
