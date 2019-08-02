@@ -60,7 +60,7 @@ else
 fi
 
 echo 'client' > "$o"
-if [ -z "$win" ]; then
+if [ "$win" == 'y' ]; then
 echo ';rc-autostart 0' >> $o
 echo 'user nobody' >> $o
 echo 'group nobody' >> $o
@@ -74,6 +74,7 @@ echo "dev $(get_conf_val "$conf" 'dev' 'unknown')" >> $o
 echo ';lladdr' >> $o
 grep -P '^(tun-mtu|fragment|mssfix)' $conf  >> "$o"
 echo "cipher $(get_conf_val "$conf" 'cipher' 'unknown')" >> $o
+grep -P '^ncp-disable' $conf  >> "$o"
 echo 'explicit-exit-notify 1' >> "$o"
 echo 'key-direction 1' >> "$o"
 echo 'verb 3' >> $o

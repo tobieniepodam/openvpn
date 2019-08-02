@@ -23,8 +23,12 @@ get_conf_val() {
   test -n "$val" && echo $val || echo $3
 }
 
+get_conf_name(){
+  echo "$1"|cut -c14-|tr '/' '-'|rev|cut -d. -f2-|rev
+}
+
 ovpn_instance() {
-  local f=$(echo "$1"|cut -c14-|tr '/' '-'|rev|cut -d. -f2-|rev)
+  local f=$(get_conf_name "$1")
   local cmd="/usr/sbin/openvpn --user nobody --group nobody --config '$1' --daemon 'openvpn($f)' --writepid '/var/run/openvpn/$f.pid' --verb 2"
   echo "Starting OpenVPN: $cmd"
   eval $cmd
@@ -61,7 +65,7 @@ ovpn_stop() {
       killall openvpn
     fi
   else # stop OpenVPN for one config file:
-    pid=/var/run/openvpn/$(basename $1|rev|cut -d. -f2-|rev).pid
+    pid=/var/run/openvpn/$(get_conf_name "$1").pid
     if [ -r $pid ]; then
       echo "Stopping OpenVPN for config file ${1}..."
       kill $(cat $pid)
