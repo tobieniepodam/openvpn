@@ -38,20 +38,41 @@ srv=$(dirname "$conf")
 pki="$srv/easyrsa/pki"
 test -d "$srv" -a -d "$pki" || error "Directory '$srv' or '$pki' doesn't exist!"
 
-clients=( $(find "$pki/issued" -type f -name '*@*' |xargs basename -a |rev|cut -d. -f2-|rev) )
-while test -z "$n" -o -z "${clients[$n]}"; do
+list=( $(find "$pki/issued" -type f -name '*@*' |xargs basename -a |rev|cut -d. -f2-|rev) )
+test ${#list[@]} -eq 0 && error 'No client keys!'
+while test -z "$i" -o -z "${list[$i]}"; do
   echo
   echo 'Select client: '
-  for i in ${!clients[*]}; do
-    echo $i ${clients[$i]}
+  for i in ${!list[*]}; do
+    echo $i ${list[$i]}
   done
-  read -p 'Your choice: ' n
-  n=$(echo $n | tr -dc '0-9\n')
+  read -p 'Your choice: ' i
+  n=$(echo $i | tr -dc '0-9')
 done
-client=${clients[$n]}
+client=${list[$i]}
 test -f "$pki/issued/$client.crt" -a -f "$pki/private/$client.key" || error "File '$client.crt' or '$client.key' not found!" >&2
-echo
 
+list=( $(ip address|grep -Po 'inet.+'|cut -d ' ' -f2|cut -d '/' -f1) )
+remote=()
+while [ ${#list[@]} -ne 0 ]; do
+  echo
+  echo 'Select server ip: '
+  for i in ${!list[*]}; do
+    echo $i ${list[$i]}
+  done
+  echo 'b break'
+
+  read -p 'Your choice: ' i
+  n=$(echo $n | tr -dc '0-9b')
+
+  test "$i" = 'b' && break
+  if [ ! -z "${list[$i]}" ]; then
+    remote+=( "${list[$i]}" )
+    unset "list[$i]"
+  fi
+done
+
+echo
 read -p 'Windows client [y/*]? : ' -n1 win
 if [ "$win" == 'y' ]; then
   o="$client.ovpn"
@@ -59,15 +80,23 @@ else
   o="$client.conf"
 fi
 
+touch "$o"
+chmod 600 "$o"
+
 echo 'client' > "$o"
-if [ "$win" == 'y' ]; then
-echo ';rc-autostart 0' >> $o
-echo 'user nobody' >> $o
-echo 'group nobody' >> $o
-echo 'persist-tun' >> $o
-echo 'persist-key' >> $o
+if [ "$win" != 'y' ]; then
+  echo ';rc-autostart 0' >> $o
+  echo 'user nobody' >> $o
+  echo 'group nobody' >> $o
 fi
-echo "remote IP $(get_conf_val "$conf" 'port' '1194')" >> $o
+port=$(get_conf_val "$conf" 'port' '1194')
+if [ ${#remote[@]} -gt 0 ]; then
+  for ip in "${remote[@]}"; do
+    echo "remote $ip $port" >> $o
+  done
+else
+  echo "remote IP $port" >> $o
+fi
 echo 'nobind' >> $o
 echo "proto $(get_conf_val "$conf" 'proto')" >> $o
 echo "dev $(get_conf_val "$conf" 'dev' 'unknown')" >> $o
@@ -75,6 +104,8 @@ echo ';lladdr' >> $o
 grep -P '^(tun-mtu|fragment|mssfix)' $conf  >> "$o"
 echo "cipher $(get_conf_val "$conf" 'cipher' 'unknown')" >> $o
 grep -P '^ncp-disable' $conf  >> "$o"
+echo 'persist-tun' >> $o
+echo 'persist-key' >> $o
 echo 'explicit-exit-notify 1' >> "$o"
 echo 'key-direction 1' >> "$o"
 echo 'verb 3' >> $o
