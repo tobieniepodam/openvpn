@@ -1,122 +1,83 @@
-#!/bin/sh 
-# 
-# /etc/rc.d/rc.openvpn 
-# 
-# Start/stop/restart the openvpn daemon. 
+#!/bin/bash
 #
-# By default, this script will start/stop/restart a daemon for every *.conf
-# file found in /etc/openvpn.
-#
-# To work with a single connection, add the name of the config file:
-# /etc/rc.d/rc.openvpn start configfile.conf
-#
-# You may also use a config file not found in /etc/openvpn by providing a
-# complete path:
-# /etc/rc.d/rc.openvpn start /path/to/some/other/configfile.conf
-#
-# The name of a config file provided with a complete path should not match
-# the name of any config file present in the /etc/openvpn directory.
+# Fired up by rc.M
+
+AUTOSTART='/etc/openvpn/rc-autostart'
+
+ECHO=/usr/bin/echo
+TEST=/usr/bin/test
+GREP=/usr/bin/grep
+CUT=/usr/bin/cut
+TR=/usr/bin/tr
+REV=/usr/bin/rev
+OPENVPN=/usr/sbin/openvpn
 
 
-get_conf_val() {
-  local val=$(grep -P "^$2" "$1" | tail -n1 | cut -d' ' -f2)
-  test -n "$val" && echo $val || echo $3
+conf2name(){
+  $ECHO "$1"|$CUT -c14-|$TR '/' '-'|$REV|$CUT -d. -f2-|$REV
 }
 
-get_conf_name(){
-  echo "$1"|cut -c14-|tr '/' '-'|rev|cut -d. -f2-|rev
+is_up(){
+  local n=$(conf2name "$1")
+  /usr/bin/ps -Ao cmd | $GREP -v "$GREP" | $GREP -qF -- "--config $1 --daemon" && return 0
+  return 1
 }
 
-ovpn_instance() {
-  local f=$(get_conf_name "$1")
-  local cmd="/usr/sbin/openvpn --user nobody --group nobody --config '$1' --daemon 'openvpn($f)' --writepid '/var/run/openvpn/$f.pid' --verb 2"
-  echo "Starting OpenVPN: $cmd"
-  eval $cmd
-}
-
-ovpn_start() {
-  if [ -x /usr/sbin/openvpn ]; then
-    if [ -z "$1" ]; then # start OpenVPN for all config files:
-      find /etc/openvpn -type f -name '*.conf' | while read config; do
-        grep -P '^[;#\s]+rc-autostart\s+1' "$config" 1>/dev/null && ovpn_instance "$config"
-      done
-    else # start OpenVPN for one config file:
-      if [ -r "$1" ]; then
-        ovpn_instance "$1"
-      else # config file is missing:
-        echo "Error starting OpenVPN: config file $1 is missing."
-      fi
-    fi
-  fi
-}
-
-ovpn_stop() { 
-  # Note: OpenVPN has a bad habit of leaving stale pid files around when exiting.
-  # Maybe it would be better to just use killall unless called for one config?
-  if [ -z "$1" ]; then # stop OpenVPN for all pid files:
-    if /bin/ls /var/run/openvpn/*.pid 1> /dev/null 2> /dev/null ; then
-      for pid in /var/run/openvpn/*.pid ; do
-        echo "Stopping OpenVPN for pid file $pid..."
-        kill $(cat $pid)
-        rm -f $pid
-      done
-    else
-      echo "Warning: no pid files found in /var/run/openvpn. Using killall to stop any OpenVPN processes."
-      killall openvpn
-    fi
-  else # stop OpenVPN for one config file:
-    pid=/var/run/openvpn/$(get_conf_name "$1").pid
-    if [ -r $pid ]; then
-      echo "Stopping OpenVPN for config file ${1}..."
-      kill $(cat $pid)
-      rm -f $pid
-    else
-      echo "Error stopping OpenVPN: no such pid file $pid"
-    fi
-  fi
-}
-
-ovpn_restart() {
-  if [ ! -z "$1" ]; then # restart for all config files:
-    ovpn_stop
-    sleep 2
-    ovpn_start
-  else # restart for one config file only:
-    ovpn_stop $1
-    sleep 2
-    ovpn_start $1
-  fi
-}
-
-ovpn_status() {
-  if /bin/ls /var/run/openvpn/*.pid 1> /dev/null 2> /dev/null ; then
-    echo "Currently running OpenVPN processes according to .pid files in /var/run/openvpn:"
-    for pid in /var/run/openvpn/*.pid ; do
-      echo "  $(basename $pid) ($(cat $pid))"
+start() {
+  if [ -z "$1" ]; then
+    $TEST -r "$AUTOSTART" || return
+    $GREP -Pv '^[#;]+' "$AUTOSTART" | while read c ; do
+      test -z "$c" && continue
+      start_openvpn "$c"
     done
   else
-    echo "No .pid files found in /var/run/openvpn." 
+      start_openvpn "$1"
+  fi
+}
+
+start_openvpn() {
+  local n=$(conf2name "$1")
+  $ECHO -n "Starting OpenVPN for config file '$1': "
+  is_up "$1" && $ECHO 'up already' || { $OPENVPN --user nobody --group nobody --config "$1" --daemon "openvpn($n)" --writepid "/var/run/openvpn/$n.pid" --verb 2 1>/dev/null 2>/dev/null && $ECHO 'up' || $ECHO 'FAIL!'; }
+}
+
+stop() {
+  if [ -z "$1" ]; then
+    $TEST -r "$AUTOSTART" || return
+    $GREP -Pv '^[#;]+' "$AUTOSTART" | while read c ; do
+      test -z "$c" && continue
+      stop_openvpn "$c"
+    done
+  else
+      stop_openvpn "$1"
+  fi
+}
+
+stop_openvpn() { 
+  local pid=/var/run/openvpn/$(conf2name "$1").pid
+  if [ -r $pid ]; then
+    $ECHO -n "Stopping OpenVPN for config file '${1}': "
+    /bin/kill $(cat $pid) 2>/dev/null && $ECHO 'ok' || $ECHO 'FAIL!'
+    /usr/bin/rm -f $pid
+  else
+    $ECHO "Error stopping OpenVPN: no such pid file $pid"
   fi
 }
 
 # Create PID directory if it doesn't exist:
 if [ ! -d /var/run/openvpn ]; then
-  mkdir -p /var/run/openvpn
+  /usr/bin/mkdir -p /var/run/openvpn
 fi
 
 case "$1" in
-'start')
-  ovpn_start $2
-  ;;
-'stop')
-  ovpn_stop $2
-  ;;
-'restart')
-  ovpn_restart $2
-  ;;
-'status')
-  ovpn_status
-  ;;
-*)
-  echo "Usage: $0 {start|stop|restart}"
+  'start')
+    start $2
+    ;;
+
+  'stop')
+    stop $2
+    ;;
+
+  *)
+    echo "Usage: $0 {start|stop} [/etc/openvpn/some/dir/config]"
 esac
